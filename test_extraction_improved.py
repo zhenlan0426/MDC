@@ -184,9 +184,6 @@ class ImprovedExtractionTester:
             print("ERROR: PyMuPDF is not available. Cannot process PDFs.")
             return
         
-        def progress_callback(message: str):
-            print(f"  {message}")
-        
         # For testing, limit to subset if specified
         if max_files:
             print(f"  Running on subset of {max_files} files for testing...")
@@ -210,7 +207,6 @@ class ImprovedExtractionTester:
         self.extracted_results = extract_data_references_from_pdfs(
             pdf_dir_to_use,
             self.patterns,
-            progress_callback,
             text_span_len=100,
             stop_at_references=True
         )

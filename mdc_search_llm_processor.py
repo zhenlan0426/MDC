@@ -65,15 +65,10 @@ def extract_all_data_references_from_pdfs():
     # Get PDF directory based on Kaggle environment
     pdf_directory = get_kaggle_pdf_directory()
     
-    # Define progress callback for tqdm integration
-    def progress_callback(message):
-        tqdm.write(message)
-    
     # Use the refactored extraction function
     chunks = extract_data_references_from_pdfs(
         pdf_directory=pdf_directory,
         patterns=get_comprehensive_patterns(),
-        progress_callback=progress_callback,
         text_span_len=100,
         stop_at_references=True
     )
@@ -123,7 +118,7 @@ def initialize_llm():
 # ==============================================================================
 # DOI URL NORMALIZATION
 # ==============================================================================
-
+# TODO: rule-based normalization for all
 def normalize_data_identifiers(llm, tokenizer, chunks):
     """
     Use LLM to extract and normalize data identifiers, with fallback to regex-based normalization.

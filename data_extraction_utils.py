@@ -178,7 +178,6 @@ def extract_identifiers_from_text(
 def extract_data_references_from_pdfs(
     pdf_directory: str,
     patterns: Dict[str, re.Pattern] = None,
-    progress_callback: callable = None,
     text_span_len: int = 100,
     stop_at_references: bool = True
 ) -> List[Tuple[str, str, str, str]]:
@@ -188,7 +187,6 @@ def extract_data_references_from_pdfs(
     Args:
         pdf_directory: Directory containing PDF files
         patterns: Dictionary of regex patterns (uses default if None)
-        progress_callback: Optional callback function for progress updates
         text_span_len: Length of context to extract around each match
         stop_at_references: Whether to stop extraction at references section
         
@@ -203,15 +201,9 @@ def extract_data_references_from_pdfs(
     
     pdf_files = [f for f in os.listdir(pdf_directory) if f.endswith('.pdf')]
     
-    if progress_callback:
-        progress_callback(f"Processing {len(pdf_files)} PDFs...")
-    
     all_results = []
     
     for i, filename in enumerate(pdf_files):
-        if progress_callback and i % 100 == 0:
-            progress_callback(f"Processed {i}/{len(pdf_files)} PDFs...")
-        
         pdf_path = os.path.join(pdf_directory, filename)
         article_id = filename.split(".pdf")[0]
         
@@ -227,12 +219,7 @@ def extract_data_references_from_pdfs(
             all_results.extend(results)
             
         except Exception as e:
-            if progress_callback:
-                progress_callback(f"Error processing {filename}: {e}")
             continue
-    
-    if progress_callback:
-        progress_callback(f"Extraction complete. Found {len(all_results)} potential data references.")
     
     return all_results
 

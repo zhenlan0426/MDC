@@ -77,14 +77,10 @@ class ExtractionTester:
             print("ERROR: PyMuPDF is not available. Cannot process PDFs.")
             return
         
-        def progress_callback(message: str):
-            print(f"  {message}")
-        
         # Extract from all PDFs
         self.extracted_results = extract_data_references_from_pdfs(
             self.pdf_directory,
             self.patterns,
-            progress_callback,
             text_span_len=100,
             stop_at_references=True
         )
