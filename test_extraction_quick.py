@@ -17,7 +17,6 @@ from data_extraction_utils import (
     get_comprehensive_patterns,
     extract_identifiers_from_text,
     extract_text_from_pdf,
-    normalize_identifier,
     PYMUPDF_AVAILABLE
 )
 
@@ -114,11 +113,10 @@ def test_sample_extraction():
             results = extract_identifiers_from_text(text, patterns, article_id, text_span_len=100)
             print(f"  Found {len(results)} potential identifiers")
             
-            # Normalize and collect
-            for _, context, pattern_type, raw_identifier in results:
-                normalized = normalize_identifier(raw_identifier, pattern_type)
-                extracted_by_article[article_id].add(normalized)
-                print(f"    {pattern_type}: {raw_identifier} -> {normalized}")
+            # Collect normalized identifiers (normalization is now done internally)
+            for _, context, pattern_type, normalized_identifier in results:
+                extracted_by_article[article_id].add(normalized_identifier)
+                print(f"    {pattern_type}: {normalized_identifier}")
             
         except Exception as e:
             print(f"  ERROR processing {filename}: {e}")

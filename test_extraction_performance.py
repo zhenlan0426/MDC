@@ -22,7 +22,6 @@ from pathlib import Path
 from data_extraction_utils import (
     get_comprehensive_patterns,
     extract_data_references_from_pdfs,
-    normalize_identifier,
     filter_common_false_positives,
     PYMUPDF_AVAILABLE
 )
@@ -93,16 +92,15 @@ class ExtractionTester:
     
     def normalize_extracted_identifiers(self) -> Dict[str, Set[str]]:
         """
-        Normalize extracted identifiers and group by article.
+        Collect extracted identifiers (now already normalized) and group by article.
         
         Returns:
             Dict mapping article_id to set of normalized identifiers
         """
         extracted_by_article = defaultdict(set)
         
-        for article_id, context, pattern_type, raw_identifier in self.extracted_results:
-            normalized = normalize_identifier(raw_identifier, pattern_type)
-            extracted_by_article[article_id].add(normalized)
+        for article_id, context, pattern_type, normalized_identifier in self.extracted_results:
+            extracted_by_article[article_id].add(normalized_identifier)
         
         return dict(extracted_by_article)
     
@@ -179,9 +177,8 @@ class ExtractionTester:
                 pattern_ground_truth[pattern_type].add((article_id, ref_id))
         
         # Group extracted by pattern type
-        for article_id, context, pattern_type, raw_identifier in self.extracted_results:
-            normalized = normalize_identifier(raw_identifier, pattern_type)
-            pattern_extracted[pattern_type].add((article_id, normalized))
+        for article_id, context, pattern_type, normalized_identifier in self.extracted_results:
+            pattern_extracted[pattern_type].add((article_id, normalized_identifier))
         
         # Calculate metrics per pattern
         pattern_metrics = {}

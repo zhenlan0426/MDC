@@ -151,7 +151,7 @@ def extract_identifiers_from_text(
         text_span_len: Length of context to extract around each match
         
     Returns:
-        List[Tuple[str, str, str, str]]: List of (article_id, context, pattern_type, raw_identifier)
+        List[Tuple[str, str, str, str]]: List of (article_id, context, pattern_type, normalized_identifier)
     """
     results = []
     
@@ -166,12 +166,15 @@ def extract_identifiers_from_text(
             if raw_identifier in article_id:
                 continue
             
+            # Normalize the identifier
+            normalized_identifier = normalize_identifier(raw_identifier, pattern_name)
+            
             # Extract text chunk around the identifier for context
             chunk_start = max(0, match.start() - text_span_len)
             chunk_end = match.start() + text_span_len
             context = text[chunk_start:chunk_end]
             
-            results.append((article_id, context, pattern_name, raw_identifier))
+            results.append((article_id, context, pattern_name, normalized_identifier))
     
     return results
 
@@ -179,7 +182,8 @@ def extract_data_references_from_pdfs(
     pdf_directory: str,
     patterns: Dict[str, re.Pattern] = None,
     text_span_len: int = 100,
-    stop_at_references: bool = True
+    stop_at_references: bool = True,
+    apply_false_positive_filtering: bool = True
 ) -> List[Tuple[str, str, str, str]]:
     """
     Extract data identifiers from all PDFs in a directory.
@@ -189,9 +193,10 @@ def extract_data_references_from_pdfs(
         patterns: Dictionary of regex patterns (uses default if None)
         text_span_len: Length of context to extract around each match
         stop_at_references: Whether to stop extraction at references section
+        apply_false_positive_filtering: Whether to apply false positive filtering
         
     Returns:
-        List[Tuple[str, str, str, str]]: List of (article_id, context, pattern_type, raw_identifier)
+        List[Tuple[str, str, str, str]]: List of (article_id, context, pattern_type, normalized_identifier)
     """
     if patterns is None:
         patterns = get_comprehensive_patterns()
@@ -220,6 +225,10 @@ def extract_data_references_from_pdfs(
             
         except Exception as e:
             continue
+    
+    # Apply improved false positive filtering to all results
+    if apply_false_positive_filtering:
+        all_results = filter_common_false_positives(all_results)
     
     return all_results
 
@@ -264,43 +273,88 @@ def validate_identifier_format(identifier: str, pattern_type: str) -> bool:
     # Default validation - just check it's not empty
     return True
 
+def validate_identifier_content(identifier: str, pattern_type: str) -> bool:
+    """Additional validation for identifier content."""
+    # Skip very short identifiers (likely false positives)
+    if len(identifier) < 4:
+        return False
+    
+    # Skip pure numeric identifiers that look like years
+    if identifier.isdigit() and 1900 <= int(identifier) <= 2100:
+        return False
+    
+    # For PDB patterns, ensure they're not just years or common false positives
+    if pattern_type in ['pdb_upper', 'pdb_lower']:
+        if identifier.isdigit():
+            return False
+        # Should have at least one letter for valid PDB codes
+        if not re.search(r'[a-zA-Z]', identifier):
+            return False
+    
+    # Skip chemical formulas that are too generic
+    if re.match(r'^[CHNOSPchnosp]+\d*$', identifier) and len(identifier) < 6:
+        return False
+    
+    return True
+
 def filter_common_false_positives(
     results: List[Tuple[str, str, str, str]]
 ) -> List[Tuple[str, str, str, str]]:
     """
-    Filter out common false positive patterns.
+    Filter out common false positive patterns using improved filtering logic.
     
     Args:
-        results: List of extraction results
+        results: List of extraction results with normalized identifiers
         
     Returns:
         List[Tuple[str, str, str, str]]: Filtered results
     """
     filtered_results = []
     
-    # Common false positive patterns to exclude
-    false_positive_contexts = [
-        r'figure\s+\d+',
-        r'fig\.\s*\d+',
-        r'table\s+\d+',
-        r'tab\.\s*\d+',
-        r'protocol\s+',
-        r'version\s+',
-        r'approval\s+',
+    # Improved false positive patterns
+    false_positive_patterns = [
+        r'\b(19|20)\d{2}\b',  # Years (1900-2099)
+        r'\b\d{4}\b',  # Generic 4-digit numbers that might be years
+        r'\b[0-9]+[a-z]\d+\b',  # Chemical formulas like c24h32
+        r'\bfig\w*\s*\d+',  # Figure references
+        r'\btab\w*\s*\d+',  # Table references
+        r'\bp\s*[<>=]\s*0\.\d+',  # P-values
+        r'\bn\s*=\s*\d+',  # Sample sizes
+        r'\bph\s*\d+\.\d+',  # pH values
+        r'\bic50\b',  # IC50 values (not database identifiers)
+        r'\bf\d+\b',  # F-statistics
+        r'\bt\d+\b',  # T-statistics
+        r'\br\d+\b',  # R-values/correlation coefficients
     ]
     
-    false_positive_pattern = re.compile('|'.join(false_positive_contexts), re.IGNORECASE)
+    false_positive_regex = re.compile('|'.join(false_positive_patterns), re.IGNORECASE)
     
-    for article_id, context, pattern_type, raw_identifier in results:
-        # Check if context contains false positive indicators
-        if false_positive_pattern.search(context):
+    for article_id, context, pattern_type, normalized_identifier in results:
+        # Skip if identifier matches false positive patterns
+        if false_positive_regex.search(normalized_identifier):
             continue
         
-        # Check if identifier is valid for its type
-        if not validate_identifier_format(raw_identifier, pattern_type):
+        # Skip if context suggests this is not a data reference
+        context_lower = context.lower()
+        if any(phrase in context_lower for phrase in [
+            'figure', 'fig.', 'table', 'tab.', 'protocol', 'version',
+            'approval', 'equation', 'formula', 'temperature', 'concentration'
+        ]):
             continue
         
-        filtered_results.append((article_id, context, pattern_type, raw_identifier))
+        # For DOI patterns, only keep those that look like real DOIs
+        if pattern_type in ['doi_https', 'doi_bare']:
+            if 'doi.org' in normalized_identifier or normalized_identifier.startswith('10.'):
+                # Check if it's a reasonable DOI format
+                if re.match(r'10\.\d+/\S+', normalized_identifier.replace('https://doi.org/', '')):
+                    filtered_results.append((article_id, context, pattern_type, normalized_identifier))
+            continue
+        
+        # For other patterns, apply additional validation
+        if validate_identifier_content(normalized_identifier, pattern_type):
+            # Check if identifier is valid for its type
+            if validate_identifier_format(normalized_identifier, pattern_type):
+                filtered_results.append((article_id, context, pattern_type, normalized_identifier))
     
     return filtered_results
 

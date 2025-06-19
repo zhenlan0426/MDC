@@ -22,7 +22,6 @@ from pathlib import Path
 from data_extraction_utils import (
     get_comprehensive_patterns,
     extract_data_references_from_pdfs,
-    normalize_identifier,
     filter_common_false_positives,
     PYMUPDF_AVAILABLE
 )
@@ -103,79 +102,6 @@ class ImprovedExtractionTester:
             'total_identifiers': len(all_identifiers)
         }
     
-    def improved_false_positive_filter(self, results: List[Tuple[str, str, str, str]]) -> List[Tuple[str, str, str, str]]:
-        """Apply improved filtering to reduce false positives."""
-        filtered_results = []
-        
-        # Improved false positive patterns
-        false_positive_patterns = [
-            r'\b(19|20)\d{2}\b',  # Years (1900-2099)
-            r'\b\d{4}\b',  # Generic 4-digit numbers that might be years
-            r'\b[0-9]+[a-z]\d+\b',  # Chemical formulas like c24h32
-            r'\bfig\w*\s*\d+',  # Figure references
-            r'\btab\w*\s*\d+',  # Table references
-            r'\bp\s*[<>=]\s*0\.\d+',  # P-values
-            r'\bn\s*=\s*\d+',  # Sample sizes
-            r'\bph\s*\d+\.\d+',  # pH values
-            r'\bic50\b',  # IC50 values (not database identifiers)
-            r'\bf\d+\b',  # F-statistics
-            r'\bt\d+\b',  # T-statistics
-            r'\br\d+\b',  # R-values/correlation coefficients
-        ]
-        
-        false_positive_regex = re.compile('|'.join(false_positive_patterns), re.IGNORECASE)
-        
-        for article_id, context, pattern_type, raw_identifier in results:
-            # Skip if identifier matches false positive patterns
-            if false_positive_regex.search(raw_identifier):
-                continue
-            
-            # Skip if context suggests this is not a data reference
-            context_lower = context.lower()
-            if any(phrase in context_lower for phrase in [
-                'figure', 'fig.', 'table', 'tab.', 'protocol', 'version',
-                'approval', 'equation', 'formula', 'temperature', 'concentration'
-            ]):
-                continue
-            
-            # For DOI patterns, only keep those that look like real DOIs
-            if pattern_type in ['doi_https', 'doi_bare']:
-                if 'doi.org' in raw_identifier or raw_identifier.startswith('10.'):
-                    # Check if it's a reasonable DOI format
-                    if re.match(r'10\.\d+/\S+', raw_identifier.replace('https://doi.org/', '')):
-                        filtered_results.append((article_id, context, pattern_type, raw_identifier))
-                continue
-            
-            # For other patterns, apply additional validation
-            if self.validate_identifier_content(raw_identifier, pattern_type):
-                filtered_results.append((article_id, context, pattern_type, raw_identifier))
-        
-        return filtered_results
-    
-    def validate_identifier_content(self, identifier: str, pattern_type: str) -> bool:
-        """Additional validation for identifier content."""
-        # Skip very short identifiers (likely false positives)
-        if len(identifier) < 4:
-            return False
-        
-        # Skip pure numeric identifiers that look like years
-        if identifier.isdigit() and 1900 <= int(identifier) <= 2100:
-            return False
-        
-        # For PDB patterns, ensure they're not just years or common false positives
-        if pattern_type in ['pdb_upper', 'pdb_lower']:
-            if identifier.isdigit():
-                return False
-            # Should have at least one letter for valid PDB codes
-            if not re.search(r'[a-zA-Z]', identifier):
-                return False
-        
-        # Skip chemical formulas that are too generic
-        if re.match(r'^[CHNOSPchnosp]+\d*$', identifier) and len(identifier) < 6:
-            return False
-        
-        return True
-    
     def extract_from_pdfs(self, max_files: int = None) -> None:
         """Extract identifiers from training PDFs."""
         print("Extracting identifiers from PDFs...")
@@ -203,17 +129,14 @@ class ImprovedExtractionTester:
         else:
             pdf_dir_to_use = self.pdf_directory
         
-        # Extract from PDFs
+        # Extract from PDFs (filtering is now integrated into the main function)
         self.extracted_results = extract_data_references_from_pdfs(
             pdf_dir_to_use,
             self.patterns,
             text_span_len=100,
-            stop_at_references=True
+            stop_at_references=True,
+            apply_false_positive_filtering=False
         )
-        
-        # Apply improved filtering
-        print("Applying improved false positive filtering...")
-        self.extracted_results = self.improved_false_positive_filter(self.extracted_results)
         
         # Clean up temporary directory if used
         if max_files:
@@ -233,9 +156,8 @@ class ImprovedExtractionTester:
         """Calculate detailed precision, recall, and F1 metrics."""
         extracted_by_article = defaultdict(set)
         
-        for article_id, context, pattern_type, raw_identifier in self.extracted_results:
-            normalized = normalize_identifier(raw_identifier, pattern_type)
-            extracted_by_article[article_id].add(normalized)
+        for article_id, context, pattern_type, normalized_identifier in self.extracted_results:
+            extracted_by_article[article_id].add(normalized_identifier)
         
         # Calculate metrics
         true_positives = 0

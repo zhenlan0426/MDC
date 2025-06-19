@@ -27,7 +27,6 @@ import torch
 from data_extraction_utils import (
     extract_data_references_from_pdfs,
     get_kaggle_pdf_directory,
-    normalize_identifier,
     filter_common_false_positives,
     get_comprehensive_patterns
 )
@@ -60,7 +59,7 @@ def extract_all_data_references_from_pdfs():
     - Cell lines (CVCL) and epidemiological data (EPI_ISL)
     
     Returns:
-        list: Tuples of (article_id, text_chunk, pattern_type, raw_identifier)
+        list: Tuples of (article_id, text_chunk, pattern_type, normalized_identifier)
     """
     # Get PDF directory based on Kaggle environment
     pdf_directory = get_kaggle_pdf_directory()
@@ -80,7 +79,7 @@ def extract_all_data_references_from_pdfs():
     
     return filtered_chunks
 
-# normalize_identifier function is now imported from data_extraction_utils
+# normalize_identifier function is now integrated into extract_data_references_from_pdfs
 
 # ==============================================================================
 # LLM SETUP AND INITIALIZATION
@@ -144,15 +143,14 @@ def normalize_data_identifiers(llm, tokenizer, chunks):
     doi_chunks = []
     doi_indices = []
     
-    for i, (article_id, academic_text, pattern_type, raw_identifier) in enumerate(chunks):
+    for i, (article_id, academic_text, pattern_type, normalized_identifier) in enumerate(chunks):
         if pattern_type in ['doi_https', 'doi_bare']:
             # DOI patterns might need LLM for complex extraction
             doi_chunks.append((article_id, academic_text))
             doi_indices.append(i)
         else:
-            # Non-DOI patterns can be normalized directly
-            normalized_id = normalize_identifier(raw_identifier, pattern_type)
-            normalized_identifiers.append(normalized_id)
+            # Non-DOI patterns are already normalized
+            normalized_identifiers.append(normalized_identifier)
     
     # Process DOI patterns with LLM if any exist
     if doi_chunks:
@@ -238,7 +236,7 @@ def classify_data_references(llm, tokenizer, chunks):
     Args:
         llm: vLLM instance
         tokenizer: Model tokenizer
-        chunks: List of (article_id, text_chunk, pattern_type, raw_identifier) tuples
+        chunks: List of (article_id, text_chunk, pattern_type, normalized_identifier) tuples
         
     Returns:
         tuple: (classification_answers, logit_probabilities)
@@ -257,7 +255,7 @@ Respond with one of A, B or C.
     prompts = []
     
     # Prepare prompts for classification
-    for article_id, academic_text, pattern_type, raw_identifier in chunks:
+    for article_id, academic_text, pattern_type, normalized_identifier in chunks:
         messages = [
             {"role": "system", "content": SYS_PROMPT},
             {"role": "user", "content": academic_text}
